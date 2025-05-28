@@ -1,0 +1,65 @@
+import requests
+import urllib3
+import json
+import pandas as pd
+from datetime import datetime, timedelta
+
+# 忽略 SSL 警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Step 1：抓取資料
+url = "https://www.ly.gov.tw/js/li_vdo.json"
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.ly.gov.tw/"
+}
+response = requests.get(url, headers=headers, verify=False)
+data = json.loads(response.content.decode("utf-8-sig"))
+
+# Step 2：自動計算本週一～週五
+today = datetime.today()
+start_of_week = today - timedelta(days=today.weekday())  # 本週一
+end_of_week = start_of_week + timedelta(days=4)          # 本週五
+
+# 建立所有日期（本週一到週五）的清單
+date_range = [(start_of_week + timedelta(days=i)).strftime("%Y/%m/%d") for i in range(5)]
+
+# Step 3：建立表格資料
+all_rows = []
+
+for date_str in date_range:
+    if date_str in data:
+        for meeting in data[date_str]:
+            row = {
+                "日期": date_str,
+                "委員會": meeting.get("CM_NAM", ""),
+                "標題": meeting.get("title", ""),
+                "主持人": meeting.get("LEADER", ""),
+                "時間": meeting.get("time", ""),
+                "地點": meeting.get("place", ""),
+                "詳細連結": meeting.get("MISQ", ""),
+                "議程內容": meeting.get("detail", "").replace("<br/>", "\n"),
+            }
+            all_rows.append(row)
+    else:
+        # 該日沒有任何資料，補一列空白
+        all_rows.append({
+            "日期": date_str,
+            "委員會": "(無資料)",
+            "標題": "(無會議)",
+            "主持人": "",
+            "時間": "",
+            "地點": "",
+            "詳細連結": "",
+            "議程內容": ""
+        })
+
+# Step 4：輸出 Excel
+df = pd.DataFrame(all_rows)
+filename = f"立法院會議_{start_of_week.strftime('%Y%m%d')}_to_{end_of_week.strftime('%Y%m%d')}.xlsx"
+df.to_excel(filename, index=False)
+print(f"✅ 已儲存本週一至週五完整資料（含空白日）：{filename}")
